@@ -1,0 +1,1449 @@
+name: apk
+on: [push, workflow_dispatch]
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: 17}
+      - uses: gradle/actions/setup-gradle@v3
+        with: {gradle-version: 8.7}
+      - run: |
+          mkdir -p app/src/main/java/com/hazball/mobile app/src/main/assets app/src/main/res/drawable
+          cat > settings.gradle <<'EOF'
+          pluginManagement{repositories{google();mavenCentral();gradlePluginPortal()}}
+          dependencyResolutionManagement{repositories{google();mavenCentral()}}
+          rootProject.name="HaxBallMobile"
+          include ':app'
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins{id 'com.android.application' version '8.5.2' apply false}
+          EOF
+          cat > gradle.properties <<'EOF'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx2g
+          EOF
+          cat > app/build.gradle <<'EOF'
+          plugins{id 'com.android.application'}
+          android{
+            namespace 'com.hazball.mobile'
+            compileSdk 34
+            defaultConfig{applicationId 'com.hazball.mobile';minSdk 24;targetSdk 34;versionCode 3;versionName '3.0'}
+            compileOptions{sourceCompatibility JavaVersion.VERSION_17;targetCompatibility JavaVersion.VERSION_17}
+          }
+          dependencies{
+            implementation 'androidx.webkit:webkit:1.11.0'
+            implementation 'androidx.core:core:1.13.1'
+          }
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.INTERNET"/>
+            <application android:label="HaxBall Mobile" android:icon="@drawable/ic_launcher" android:hardwareAccelerated="true" android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
+              <activity android:name=".MainActivity" android:exported="true"
+                android:screenOrientation="sensorLandscape"
+                android:windowSoftInputMode="adjustResize"
+                android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout">
+                <intent-filter>
+                  <action android:name="android.intent.action.MAIN"/>
+                  <category android:name="android.intent.category.LAUNCHER"/>
+                </intent-filter>
+              </activity>
+            </application>
+          </manifest>
+          EOF
+          cat > app/src/main/res/drawable/ic_launcher.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+            android:width="108dp"
+            android:height="108dp"
+            android:viewportWidth="108"
+            android:viewportHeight="108">
+            <path android:fillColor="#0A1430" android:pathData="M0,0h108v108h-108z"/>
+            <path android:fillColor="#331F6FEB" android:pathData="M54,54m-50,0a50,50 0 1,0 100,0a50,50 0 1,0 -100,0"/>
+            <path android:fillColor="#554DA3FF" android:pathData="M54,54m-42,0a42,42 0 1,0 84,0a42,42 0 1,0 -84,0"/>
+            <path android:fillColor="#FF9D00" android:pathData="M54,54m-34,0a34,34 0 1,0 68,0a34,34 0 1,0 -68,0"/>
+            <path android:fillColor="#FFF6A0" android:pathData="M54,54m-29,0a29,29 0 1,0 58,0a29,29 0 1,0 -58,0"/>
+            <path android:fillColor="#E22D00" android:pathData="M54,54m-22,0a22,22 0 1,0 44,0a22,22 0 1,0 -44,0"/>
+            <path android:fillColor="#1A0800" android:pathData="M54,42 L65.4,50.3 L61,63.7 L47,63.7 L42.6,50.3 Z"/>
+            <path android:strokeColor="#1A0800" android:strokeWidth="2.4" android:pathData="M54,42 L54,27 M65.4,50.3 L79,46 M61,63.7 L69,75 M47,63.7 L39,75 M42.6,50.3 L29,46"/>
+            <path android:strokeColor="#7FD4FF" android:strokeWidth="2.5" android:pathData="M54,54m-34,0a34,34 0 1,0 68,0a34,34 0 1,0 -68,0"/>
+          </vector>
+          EOF
+          cat > app/src/main/java/com/hazball/mobile/MainActivity.java <<'EOF'
+          package com.hazball.mobile;
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.view.Gravity;
+          import android.view.View;
+          import android.view.WindowManager;
+          import android.webkit.CookieManager;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.ValueCallback;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebResourceError;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebResourceResponse;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.widget.FrameLayout;
+          import android.widget.TextView;
+          import android.widget.Toast;
+          import androidx.core.view.WindowCompat;
+          import androidx.core.view.WindowInsetsCompat;
+          import androidx.core.view.WindowInsetsControllerCompat;
+          import androidx.webkit.ScriptHandler;
+          import androidx.webkit.WebViewCompat;
+          import androidx.webkit.WebViewFeature;
+          import java.io.ByteArrayInputStream;
+          import java.io.ByteArrayOutputStream;
+          import java.io.File;
+          import java.io.FileOutputStream;
+          import java.io.InputStream;
+          import java.util.ArrayList;
+          import java.util.Collections;
+          import java.util.regex.Matcher;
+          import java.util.regex.Pattern;
+          import org.json.JSONArray;
+          import org.json.JSONObject;
+          public class MainActivity extends Activity {
+            static final String URL = "https://www.haxball.com/play";
+            static final String[] ADS = {"doubleclick", "googlesyndication", "googleadservices", "adinplay", "adsbygoogle",
+              "google-analytics", "googletagmanager", "amazon-adsystem", "adnxs", "taboola", "outbrain", "criteo", "pubmatic",
+              "rubiconproject", "openx.net", "smartadserver", "moatads", "adsrvr", "casalemedia", "adform", "venatus",
+              "nitropay", "playwire", "snigel", "freestar", "aniview", "connatix"};
+            WebView game, menu;
+            Pad pad;
+            TextView loading;
+            ScriptHandler sh;
+            SharedPreferences sp;
+            String target = URL;
+            volatile boolean started;
+            volatile boolean blockAds = true;
+            volatile boolean jsKeys = true;
+            boolean stadiumCtl = true;
+            long lastBack;
+            ValueCallback<Uri[]> fileCb, gameCb;
+
+            class Bridge {
+              @JavascriptInterface public String get() { return sp.getString("cfg", "{}"); }
+              @JavascriptInterface public void save(String j) { sp.edit().putString("cfg", j).apply(); }
+              @JavascriptInterface public boolean started() { return started; }
+              @JavascriptInterface public void play(String j, boolean reload) {
+                sp.edit().putString("cfg", j).apply();
+                runOnUiThread(() -> { if (reload) target = URL; launch(reload); });
+              }
+              @JavascriptInterface public void join(String j, String u) {
+                sp.edit().putString("cfg", j).apply();
+                runOnUiThread(() -> { target = okUrl(u) ? u : URL; launch(true); });
+              }
+              @JavascriptInterface public void quit() { runOnUiThread(() -> finish()); }
+              @JavascriptInterface public void cmd(String t) { runOnUiThread(() -> say(t)); }
+            }
+
+            static boolean okUrl(String u) {
+              try {
+                Uri p = Uri.parse(u);
+                String h = p.getHost();
+                return "https".equals(p.getScheme()) && h != null && (h.equals("haxball.com") || h.endsWith(".haxball.com"));
+              } catch (Exception e) { return false; }
+            }
+
+            /* User-Agent de escritorio con la MISMA version de Chromium del WebView (evita incoherencias que molestan al reCAPTCHA) */
+            String ua() {
+              String ver = "124.0.0.0";
+              try {
+                Matcher m = Pattern.compile("Chrome/([0-9.]+)").matcher(WebSettings.getDefaultUserAgent(this));
+                if (m.find()) ver = m.group(1);
+              } catch (Exception e) { }
+              return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + ver + " Safari/537.36";
+            }
+
+            void say(String t) {
+              game.evaluateJavascript("window.__hbc&&__hbc(" + JSONObject.quote(t) + ")", null);
+            }
+
+            @Override protected void onCreate(Bundle b) {
+              super.onCreate(b);
+              getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+              if (Build.VERSION.SDK_INT >= 28)
+                getWindow().getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+              sp = getSharedPreferences("hz", 0);
+              FrameLayout root = new FrameLayout(this);
+              root.setBackgroundColor(0xFF05070D);
+
+              CookieManager cm = CookieManager.getInstance();
+              cm.setAcceptCookie(true);
+
+              game = new WebView(this);
+              cm.setAcceptThirdPartyCookies(game, true);
+              WebSettings s = game.getSettings();
+              s.setJavaScriptEnabled(true);
+              s.setDomStorageEnabled(true);
+              s.setMediaPlaybackRequiresUserGesture(false);
+              s.setSupportZoom(false);
+              s.setUserAgentString(ua());
+              s.setSaveFormData(false);
+              s.setGeolocationEnabled(false);
+              s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+              game.setOverScrollMode(View.OVER_SCROLL_NEVER);
+              game.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+              game.setBackgroundColor(0xFF1A2125);
+              game.setWebViewClient(new WebViewClient() {
+                @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
+                  if (blockAds) {
+                    String h = r.getUrl().getHost();
+                    if (h != null) for (String a : ADS)
+                      if (h.contains(a)) return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream(new byte[0]));
+                  }
+                  return null;
+                }
+                /* bloquea redirecciones de anuncios que intentan sacar la pagina principal de haxball.com */
+                @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
+                  if (!r.isForMainFrame()) return false;
+                  String sc = r.getUrl().getScheme();
+                  if (sc == null || !(sc.equals("http") || sc.equals("https"))) return true;
+                  String h = r.getUrl().getHost();
+                  return !(h != null && (h.equals("haxball.com") || h.endsWith(".haxball.com")));
+                }
+                @Override public void onPageFinished(WebView v, String u) { loading.setVisibility(View.GONE); }
+                @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
+                  if (r.isForMainFrame()) {
+                    loading.setVisibility(View.GONE);
+                    Toast.makeText(MainActivity.this, "Sin conexion con HaxBall. Revisa tu internet.", Toast.LENGTH_LONG).show();
+                    started = false;
+                    showMenu();
+                  }
+                }
+              });
+              game.setWebChromeClient(new WebChromeClient() {
+                /* "Cargar estadio" dentro de la sala: si la Cancha Control esta activa se carga sola */
+                @Override public boolean onShowFileChooser(WebView w, ValueCallback<Uri[]> cb, FileChooserParams p) {
+                  if (gameCb != null) gameCb.onReceiveValue(null);
+                  gameCb = cb;
+                  try {
+                    if (stadiumCtl) {
+                      Uri u = stadium();
+                      if (u != null) {
+                        gameCb = null;
+                        cb.onReceiveValue(new Uri[]{u});
+                        Toast.makeText(MainActivity.this, "Cancha Control cargada", Toast.LENGTH_SHORT).show();
+                        return true;
+                      }
+                    }
+                    Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    i.setType("*/*");
+                    startActivityForResult(Intent.createChooser(i, "Elegi un archivo"), 8);
+                  } catch (Exception e) { gameCb = null; cb.onReceiveValue(null); }
+                  return true;
+                }
+              });
+
+              loading = new TextView(this);
+              loading.setText("Cargando HaxBall...");
+              loading.setTextColor(0xFFE8F1FF);
+              loading.setTextSize(18);
+              loading.setGravity(Gravity.CENTER);
+              loading.setBackgroundColor(0xE605070D);
+              loading.setVisibility(View.GONE);
+
+              menu = new WebView(this);
+              WebSettings m = menu.getSettings();
+              m.setJavaScriptEnabled(true);
+              m.setDomStorageEnabled(true);
+              menu.setBackgroundColor(0xFF05070D);
+              menu.addJavascriptInterface(new Bridge(), "HBApp");
+              menu.setWebChromeClient(new WebChromeClient() {
+                @Override public boolean onShowFileChooser(WebView w, ValueCallback<Uri[]> cb, FileChooserParams p) {
+                  if (fileCb != null) fileCb.onReceiveValue(null);
+                  fileCb = cb;
+                  Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+                  i.addCategory(Intent.CATEGORY_OPENABLE);
+                  i.setType("image/*");
+                  try { startActivityForResult(Intent.createChooser(i, "Elegi una imagen"), 7); }
+                  catch (Exception e) { fileCb = null; return false; }
+                  return true;
+                }
+              });
+              menu.loadUrl("file:///android_asset/menu.html");
+
+              pad = new Pad(this, this::sendKey);
+              pad.onSettings = this::showMenu;
+              pad.onSay = this::say;
+              pad.setVisibility(View.GONE);
+
+              root.addView(game, new FrameLayout.LayoutParams(-1, -1));
+              root.addView(loading, new FrameLayout.LayoutParams(-1, -1));
+              root.addView(pad, new FrameLayout.LayoutParams(-1, -1));
+              root.addView(menu, new FrameLayout.LayoutParams(-1, -1));
+              setContentView(root);
+
+              /* cada 400 ms pregunta a la pagina si hay una partida en curso: el pad solo captura toques jugando */
+              game.postDelayed(new Runnable() {
+                @Override public void run() {
+                  if (started && menu.getVisibility() != View.VISIBLE)
+                    game.evaluateJavascript("window.__hbs?__hbs():0", v -> pad.setPlaying("1".equals(v)));
+                  game.postDelayed(this, 400);
+                }
+              }, 800);
+            }
+
+            Uri stadium() {
+              try {
+                File f = new File(getCacheDir(), "control.hbs");
+                try (InputStream is = getAssets().open("control.hbs"); FileOutputStream os = new FileOutputStream(f)) {
+                  byte[] buf = new byte[8192];
+                  int r;
+                  while ((r = is.read(buf)) > 0) os.write(buf, 0, r);
+                }
+                return Uri.fromFile(f);
+              } catch (Exception e) { return null; }
+            }
+
+            @Override protected void onActivityResult(int rq, int rs, Intent d) {
+              super.onActivityResult(rq, rs, d);
+              if (rq == 7 && fileCb != null) {
+                fileCb.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(rs, d));
+                fileCb = null;
+              } else if (rq == 8 && gameCb != null) {
+                gameCb.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(rs, d));
+                gameCb = null;
+              }
+            }
+
+            String asset(String n) {
+              try (InputStream is = getAssets().open(n)) {
+                ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int r;
+                while ((r = is.read(buf)) > 0) bo.write(buf, 0, r);
+                return bo.toString("UTF-8") + "\n;\n";
+              } catch (Exception e) { return ""; }
+            }
+
+            void sendKey(int code, boolean down) {
+              if (jsKeys) {
+                int j = code == android.view.KeyEvent.KEYCODE_DPAD_LEFT ? 37 : code == android.view.KeyEvent.KEYCODE_DPAD_UP ? 38
+                  : code == android.view.KeyEvent.KEYCODE_DPAD_RIGHT ? 39 : code == android.view.KeyEvent.KEYCODE_DPAD_DOWN ? 40 : 88;
+                game.evaluateJavascript("window.__hbk&&__hbk(" + j + "," + (down ? 1 : 0) + ")", null);
+              } else {
+                long t = android.os.SystemClock.uptimeMillis();
+                game.dispatchKeyEvent(new android.view.KeyEvent(t, t, down ? android.view.KeyEvent.ACTION_DOWN : android.view.KeyEvent.ACTION_UP, code, 0));
+              }
+            }
+
+            void launch(boolean reload) {
+              String cfg = sp.getString("cfg", "{}");
+              try {
+                JSONObject c = new JSONObject(cfg);
+                JSONObject p = c.optJSONObject("pad");
+                JSONObject k = c.optJSONObject("ctrl");
+                JSONObject as = c.optJSONObject("assist");
+                JSONObject ch = c.optJSONObject("chat");
+                if (p != null) pad.apply((float) p.optDouble("scale", 1), (float) p.optDouble("alpha", 1), p.optBoolean("left", false), p.optBoolean("vib", true),
+                  k == null ? .25f : (float) k.optDouble("dz", .25), k == null || k.optBoolean("snap", true), k == null ? 50 : k.optInt("minKick", 50));
+                boolean assist = as != null && !"off".equals(as.optString("mode", "off"));
+                jsKeys = assist || k == null || !"native".equals(k.optString("mode", "js"));
+                stadiumCtl = k == null || k.optBoolean("stadium", true);
+                JSONObject sc = c.optJSONObject("screen");
+                blockAds = sc == null || sc.optBoolean("noads", true);
+                if (ch != null) {
+                  JSONArray q = ch.optJSONArray("quick");
+                  if (q != null) {
+                    ArrayList<String> l = new ArrayList<>();
+                    for (int i = 0; i < q.length() && l.size() < 9; i++) {
+                      String t = q.optString(i, "").trim();
+                      if (!t.isEmpty()) l.add(t);
+                    }
+                    pad.setQuick(l.toArray(new String[0]));
+                  }
+                }
+              } catch (Exception e) { }
+              if (reload || !started) {
+                if (sh != null) { sh.remove(); sh = null; }
+                if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
+                  sh = WebViewCompat.addDocumentStartJavaScript(game, "window.__HB=" + cfg + ";\n" + asset("common.js") + asset("hb.js"), Collections.singleton("*"));
+                started = true;
+                loading.setVisibility(View.VISIBLE);
+                game.loadUrl(target);
+              }
+              menu.setVisibility(View.GONE);
+              menu.evaluateJavascript("window.fx&&fx(0)", null);
+              pad.setVisibility(View.VISIBLE);
+              game.requestFocus();
+            }
+
+            void showMenu() {
+              pad.releaseAll();
+              pad.setPlaying(false);
+              pad.setVisibility(View.GONE);
+              menu.setVisibility(View.VISIBLE);
+              menu.evaluateJavascript("window.fx&&fx(1)", null);
+              menu.requestFocus();
+            }
+
+            void hideBars() {
+              WindowInsetsControllerCompat c = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+              c.hide(WindowInsetsCompat.Type.systemBars());
+              c.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+            @Override public void onWindowFocusChanged(boolean f) { super.onWindowFocusChanged(f); if (f) hideBars(); }
+            @Override protected void onPause() { super.onPause(); game.onPause(); CookieManager.getInstance().flush(); }
+            @Override protected void onResume() { super.onResume(); game.onResume(); }
+            @Override public void onBackPressed() {
+              if (menu.getVisibility() != View.VISIBLE) { showMenu(); return; }
+              if (started) { launch(false); return; }
+              long n = System.currentTimeMillis();
+              if (n - lastBack < 2000) finish();
+              else { lastBack = n; Toast.makeText(this, "Toca atras otra vez para salir", Toast.LENGTH_SHORT).show(); }
+            }
+          }
+          EOF
+          cat > app/src/main/java/com/hazball/mobile/Pad.java <<'EOF'
+          package com.hazball.mobile;
+          import android.content.Context;
+          import android.graphics.Canvas;
+          import android.graphics.Paint;
+          import android.graphics.RectF;
+          import android.os.Handler;
+          import android.os.Looper;
+          import android.os.SystemClock;
+          import android.view.HapticFeedbackConstants;
+          import android.view.KeyEvent;
+          import android.view.MotionEvent;
+          import android.view.View;
+          import java.util.function.Consumer;
+          public class Pad extends View {
+            interface Sink { void key(int code, boolean down); }
+            static final int[] KC = {KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN};
+            final Sink sink;
+            final Handler hd = new Handler(Looper.getMainLooper());
+            Runnable onSettings;
+            Consumer<String> onSay;
+            String[] quick = {"gg", "pasa", "dale", "bien!", "gracias", "uf"};
+            boolean on = true, playing = false, lf = false, vib = true, snap = true, qOpen = false;
+            int jid = -1, kid = -1, minKick = 50;
+            long kt;
+            float ox, oy, tx, ty, d, R, sc = 1, al = 1, dz = .25f;
+            final boolean[] k = new boolean[4];
+            final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+            final RectF rf = new RectF();
+
+            Pad(Context c, Sink s) {
+              super(c);
+              sink = s;
+              d = c.getResources().getDisplayMetrics().density;
+              R = 60 * d;
+              setFocusable(false);
+              setFocusableInTouchMode(false);
+            }
+            void apply(float s, float a, boolean l, boolean v, float z, boolean sn, int mk) {
+              sc = s; al = a; lf = l; vib = v; dz = z; snap = sn; minKick = mk;
+              R = 60 * d * sc;
+              invalidate();
+            }
+            void setQuick(String[] q) { if (q != null && q.length > 0) quick = q; }
+            /* Solo captura toques cuando hay una partida en curso; en menus y salas deja pasar todo al juego (captcha, lista de salas...) */
+            void setPlaying(boolean b) {
+              if (playing == b) return;
+              playing = b;
+              if (!b) { qOpen = false; releaseAll(); }
+              invalidate();
+            }
+            void key(int code, boolean down) { sink.key(code, down); }
+            void kick(boolean down) {
+              if (down) { kt = SystemClock.uptimeMillis(); key(KeyEvent.KEYCODE_X, true); }
+              else {
+                long w = minKick - (SystemClock.uptimeMillis() - kt);
+                if (w > 0) hd.postDelayed(() -> key(KeyEvent.KEYCODE_X, false), w);
+                else key(KeyEvent.KEYCODE_X, false);
+              }
+            }
+            void dirs() {
+              float dx = tx - ox, dy = ty - oy;
+              boolean[] n = new boolean[4];
+              if (Math.hypot(dx, dy) > R * dz) {
+                if (snap) {
+                  double a = Math.toDegrees(Math.atan2(dy, dx));
+                  double h = 6;
+                  n[0] = Math.abs(a) > 112.5 - (k[0] ? h : 0);
+                  n[1] = Math.abs(a) < 67.5 + (k[1] ? h : 0);
+                  n[2] = a < -22.5 + (k[2] ? h : 0) && a > -157.5 - (k[2] ? h : 0);
+                  n[3] = a > 22.5 - (k[3] ? h : 0) && a < 157.5 + (k[3] ? h : 0);
+                } else {
+                  float z = R * dz;
+                  n[0] = dx < -z; n[1] = dx > z; n[2] = dy < -z; n[3] = dy > z;
+                }
+              }
+              for (int i = 0; i < 4; i++) if (n[i] != k[i]) { k[i] = n[i]; key(KC[i], n[i]); }
+            }
+            void relDirs() { for (int i = 0; i < 4; i++) if (k[i]) { k[i] = false; key(KC[i], false); } }
+            void releaseAll() { relDirs(); if (kid >= 0) key(KeyEvent.KEYCODE_X, false); jid = kid = -1; }
+            float gx() { return getWidth() - 30 * d; }
+            float ex() { return getWidth() - 76 * d; }
+            float qx() { return getWidth() - 122 * d; }
+            float ay() { return 30 * d; }
+            float kx() { return lf ? 90 * d : getWidth() - 90 * d; }
+            float ky() { return getHeight() - 90 * d; }
+            boolean joyZone(float x, float y) { return y > getHeight() * .3f && (lf ? x > getWidth() * .55f : x < getWidth() * .45f); }
+            boolean kickZone(float x, float y) { return y > getHeight() * .3f && (lf ? x < getWidth() * .45f : x > getWidth() * .55f); }
+            boolean hit(float x, float y, float cx, float cy, float r) { return Math.hypot(x - cx, y - cy) < r; }
+            void col(int argb) { p.setColor(argb); p.setAlpha((int) ((argb >>> 24) * al)); }
+
+            /* chips de chat rapido: 3 columnas */
+            float chipX(int i) { float w = 92 * d, g = 8 * d; return (getWidth() - (3 * w + 2 * g)) / 2f + (i % 3) * (w + g); }
+            float chipY(int i) { return 58 * d + (i / 3) * (44 * d); }
+            int chipAt(float x, float y) {
+              int n = Math.min(quick.length, 9);
+              for (int i = 0; i < n; i++) {
+                float cx = chipX(i), cy = chipY(i);
+                if (x >= cx && x <= cx + 92 * d && y >= cy && y <= cy + 36 * d) return i;
+              }
+              return -1;
+            }
+
+            @Override public boolean onTouchEvent(MotionEvent e) {
+              int a = e.getActionMasked(), idx = e.getActionIndex(), id = e.getPointerId(idx);
+              float x = e.getX(idx), y = e.getY(idx);
+              switch (a) {
+                case MotionEvent.ACTION_DOWN:
+                case MotionEvent.ACTION_POINTER_DOWN:
+                  if (hit(x, y, gx(), ay(), 26 * d)) { if (onSettings != null) onSettings.run(); return true; }
+                  if (!playing) return false;
+                  if (hit(x, y, ex(), ay(), 26 * d)) { on = !on; qOpen = false; releaseAll(); invalidate(); return true; }
+                  if (hit(x, y, qx(), ay(), 26 * d)) { qOpen = !qOpen; invalidate(); return true; }
+                  if (qOpen) {
+                    int i = chipAt(x, y);
+                    qOpen = false; invalidate();
+                    if (i >= 0 && onSay != null) onSay.accept(quick[i]);
+                    return true;
+                  }
+                  if (!on) return false;
+                  if (joyZone(x, y) && jid < 0) {
+                    jid = id; ox = tx = x; oy = ty = y; invalidate(); return true;
+                  }
+                  if (kickZone(x, y) && kid < 0) {
+                    kid = id; kick(true);
+                    if (vib) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+                    invalidate(); return true;
+                  }
+                  return false;
+                case MotionEvent.ACTION_MOVE:
+                  for (int i = 0; i < e.getPointerCount(); i++) if (e.getPointerId(i) == jid) {
+                    tx = e.getX(i); ty = e.getY(i);
+                    float dx = tx - ox, dy = ty - oy, l = (float) Math.hypot(dx, dy);
+                    if (l > R) { ox += dx / l * (l - R); oy += dy / l * (l - R); }
+                    dirs(); invalidate();
+                  }
+                  return jid >= 0 || kid >= 0;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_POINTER_UP:
+                case MotionEvent.ACTION_CANCEL:
+                  if (id == jid) { jid = -1; relDirs(); invalidate(); }
+                  if (id == kid) { kid = -1; kick(false); invalidate(); }
+                  return true;
+              }
+              return false;
+            }
+
+            @Override protected void onDraw(Canvas c) {
+              p.setStyle(Paint.Style.FILL);
+              p.setTextAlign(Paint.Align.CENTER);
+              p.setTextSize(22 * d);
+              p.setColor(0xFFFFFFFF); p.setAlpha(playing ? 0x77 : 0x44);
+              c.drawText("☰", gx(), ay() + 8 * d, p);
+              if (!playing) return;
+              c.drawText("🎮", ex(), ay() + 8 * d, p);
+              c.drawText("💬", qx(), ay() + 8 * d, p);
+              if (qOpen) {
+                int n = Math.min(quick.length, 9);
+                for (int i = 0; i < n; i++) {
+                  rf.set(chipX(i), chipY(i), chipX(i) + 92 * d, chipY(i) + 36 * d);
+                  p.setStyle(Paint.Style.FILL); p.setColor(0xCC0B1630);
+                  c.drawRoundRect(rf, 18 * d, 18 * d, p);
+                  p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(1.5f * d); p.setColor(0xFF4DA3FF);
+                  c.drawRoundRect(rf, 18 * d, 18 * d, p);
+                  p.setStyle(Paint.Style.FILL); p.setColor(0xFFFFFFFF); p.setTextSize(14 * d);
+                  c.drawText(quick[i], rf.centerX(), rf.centerY() + 5 * d, p);
+                }
+              }
+              if (!on) return;
+              float bx = jid >= 0 ? ox : (lf ? getWidth() - 110 * d : 110 * d), by = jid >= 0 ? oy : getHeight() - 100 * d;
+              p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(3 * d);
+              col(jid >= 0 ? 0x88FFFFFF : 0x33FFFFFF);
+              c.drawCircle(bx, by, R, p);
+              p.setStyle(Paint.Style.FILL);
+              if (jid >= 0) { col(0x66FFFFFF); c.drawCircle(tx, ty, 26 * d * sc, p); }
+              col(kid >= 0 ? 0x88FFFFFF : 0x33FFFFFF);
+              c.drawCircle(kx(), ky(), 44 * d * sc, p);
+              col(0xCCFFFFFF); p.setTextSize(13 * d);
+              c.drawText("PATEAR", kx(), ky() + 5 * d, p);
+            }
+          }
+          EOF
+          cat > app/src/main/assets/common.js <<'EOF'
+          var HBX=(function(){
+          var T=6.2832,PI=Math.PI;
+          function rnd(n){return Math.abs(Math.sin(n*127.1)*43758.5453)%1}
+          function circ(c,x,y,r){c.beginPath();c.arc(x,y,r,0,T)}
+          function poly(c,x,y,R,n,o){c.beginPath();for(var i=0;i<n;i++){var a=o+i*T/n;c.lineTo(x+Math.cos(a)*R,y+Math.sin(a)*R)}c.closePath();c.fill()}
+          function ring(c,x,y,r,col){c.lineWidth=Math.max(1,r*.1);c.strokeStyle=col;circ(c,x,y,r-c.lineWidth/2);c.stroke()}
+          function cimg(c,im,x,y,r){c.save();circ(c,x,y,r);c.clip();c.drawImage(im,x-r,y-r,2*r,2*r);c.restore();ring(c,x,y,r,'#000')}
+          function jersey(c,x,y,r,j){
+            var k=j.c,p=j.pat,i,a,b,n=5,w=2*r/n;
+            c.save();circ(c,x,y,r);c.clip();
+            c.fillStyle=k[0];c.fillRect(x-r,y-r,2*r,2*r);
+            c.save();c.fillStyle=k[1];
+            if(p=='v'||p=='d'){
+              if(p=='d'){c.translate(x,y);c.rotate(-.785);c.translate(-x,-y)}
+              for(i=1;i<n;i+=2)c.fillRect(x-r+i*w,y-1.5*r,w,3*r);
+            }else if(p=='h'){for(i=1;i<n;i+=2)c.fillRect(x-1.5*r,y-r+i*w,3*r,w)}
+            else if(p=='half')c.fillRect(x,y-r,r,2*r);
+            else if(p=='check'){for(a=0;a<4;a++)for(b=0;b<4;b++)if((a+b)%2)c.fillRect(x-r+a*r/2,y-r+b*r/2,r/2,r/2)}
+            c.restore();
+            if(j.num){c.fillStyle=k[2];c.font='bold '+(r*1.15)+'px sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText(String(j.num).slice(0,2),x,y)}
+            c.restore();
+            ring(c,x,y,r,k[2]);
+          }
+          function aura(c,x,y,r,a,t){
+            var ty=a.type;if(!ty||ty=='none')return;
+            var s=a.size,col=a.color,i,k,ph,an,d,z,px,py,f,R=r*(1.2+.35*s);
+            t=t*a.speed;
+            c.save();c.globalCompositeOperation='lighter';c.lineCap='round';c.strokeStyle=col;c.fillStyle=col;
+            if(ty=='ring'){
+              for(i=0;i<3;i++){c.globalAlpha=(.55-i*.16)*(.75+.25*Math.sin(t*4));c.lineWidth=r*(.18+i*.2);circ(c,x,y,R+i*r*.05);c.stroke()}
+            }else if(ty=='pulse'){
+              for(i=0;i<3;i++){ph=(t*.7+i/3)%1;c.globalAlpha=(1-ph)*.8;c.lineWidth=r*.18;circ(c,x,y,r*(1+ph*1.4*s));c.stroke()}
+            }else if(ty=='rainbow'){
+              c.lineWidth=r*.3;c.globalAlpha=.85;
+              for(i=0;i<12;i++){c.strokeStyle='hsl('+((i*30+t*120)%360)+',100%,60%)';c.beginPath();c.arc(x,y,R,i*T/12,(i+1.15)*T/12);c.stroke()}
+            }else if(ty=='fire'){
+              for(i=0;i<16;i++){ph=(t*1.3+i/16)%1;k=Math.sin(i*12.9+1)*r*.8;c.globalAlpha=(1-ph)*.9;c.fillStyle='hsl('+(8+ph*45)+',100%,'+(50+ph*10)+'%)';circ(c,x+k*(1-ph),y+r*.4-ph*r*2.2*s,r*.42*(1-ph*.8));c.fill()}
+            }else if(ty=='bolt'){
+              f=Math.floor(t*10);c.lineWidth=Math.max(1.5,r*.12);c.globalAlpha=.95;
+              for(i=0;i<5;i++){
+                an=rnd(f*7+i)*T;c.beginPath();c.moveTo(x+Math.cos(an)*r,y+Math.sin(an)*r);
+                for(k=1;k<=4;k++){an+=(rnd(f*13+i*5+k)-.5)*.9;d=r*(1+k*.3*s);c.lineTo(x+Math.cos(an)*d,y+Math.sin(an)*d)}
+                c.stroke();
+              }
+              c.globalAlpha=.25;c.lineWidth=r*.3;circ(c,x,y,r*1.1);c.stroke();
+            }else if(ty=='stars'){
+              z=r*.28;c.globalAlpha=.95;
+              for(i=0;i<6;i++){
+                an=t*2+i*T/6;d=R*(1+.12*Math.sin(t*3+i));px=x+Math.cos(an)*d;py=y+Math.sin(an)*d;
+                c.beginPath();c.moveTo(px,py-z);c.lineTo(px+z*.35,py-z*.35);c.lineTo(px+z,py);c.lineTo(px+z*.35,py+z*.35);
+                c.lineTo(px,py+z);c.lineTo(px-z*.35,py+z*.35);c.lineTo(px-z,py);c.lineTo(px-z*.35,py-z*.35);c.closePath();c.fill();
+              }
+            }
+            c.restore();
+          }
+          function curves(c,x,y,r){
+            c.beginPath();c.arc(x-r*1.1,y,r*.95,-.9,.9);c.stroke();
+            c.beginPath();c.arc(x+r*1.1,y,r*.95,PI-.9,PI+.9);c.stroke();
+          }
+          function ball(c,x,y,r,b,im){
+            var k=b.skin,col=b.color,i,g,u=x-r,v=y-r,w=2*r;
+            if(b.photo&&im){cimg(c,im,x,y,r);return}
+            if(!k||k=='classic')return;
+            c.save();circ(c,x,y,r);c.clip();
+            if(k=='color'){c.fillStyle=col;c.fillRect(u,v,w,w);c.fillStyle='rgba(255,255,255,.4)';circ(c,x-r*.3,y-r*.3,r*.4);c.fill()}
+            else if(k=='soccer'){
+              c.fillStyle='#fff';c.fillRect(u,v,w,w);c.fillStyle='#111';poly(c,x,y,r*.4,5,-1.5708);
+              for(i=0;i<5;i++)poly(c,x+Math.cos(i*1.2566-1.5708)*r*1.05,y+Math.sin(i*1.2566-1.5708)*r*1.05,r*.45,5,i*1.2566);
+            }else if(k=='basket'){
+              c.fillStyle='#e8772e';c.fillRect(u,v,w,w);c.strokeStyle='#2b1200';c.lineWidth=Math.max(1,r*.1);
+              c.beginPath();c.moveTo(x,v);c.lineTo(x,y+r);c.moveTo(u,y);c.lineTo(x+r,y);c.stroke();curves(c,x,y,r);
+            }else if(k=='tennis'){
+              c.fillStyle='#c6e32c';c.fillRect(u,v,w,w);c.strokeStyle='#fff';c.lineWidth=r*.16;curves(c,x,y,r);
+            }else if(k=='neon'){
+              c.fillStyle='#070912';c.fillRect(u,v,w,w);c.strokeStyle=col;c.lineWidth=r*.2;circ(c,x,y,r*.55);c.stroke();
+            }else if(k=='fire'){
+              g=c.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,'#fff6a0');g.addColorStop(.5,'#ff9d00');g.addColorStop(1,'#e22d00');
+              c.fillStyle=g;c.fillRect(u,v,w,w);
+            }
+            c.restore();
+            ring(c,x,y,r,k=='neon'?col:'#111');
+          }
+          function trail(c,tr,x,y,r,b){
+            var k=b.trail,i,f;
+            if(!k||k=='none'){tr.length=0;return}
+            tr.push([x,y]);if(tr.length>16)tr.shift();
+            c.save();c.globalCompositeOperation='lighter';
+            for(i=0;i<tr.length-2;i++){
+              f=i/tr.length;c.globalAlpha=f*.7;
+              c.fillStyle=k=='fire'?'hsl('+(10+f*40)+',100%,55%)':k=='rainbow'?'hsl('+(f*300)+',100%,60%)':b.color;
+              circ(c,tr[i][0],tr[i][1],r*(.2+.8*f));c.fill();
+            }
+            c.restore();
+          }
+          return{jersey:jersey,aura:aura,ball:ball,trail:trail,cimg:cimg};
+          })();
+          EOF
+          cat > app/src/main/assets/hb.js <<'EOF'
+          (function(){
+          if(/(google|gstatic|recaptcha|doubleclick|googlesyndication)\./.test(location.hostname))return;
+          var H=window.__HB||{},S=H.screen||{},isTop=window.top===window,mode=(H.auto||{}).mode;
+          function qs(s,r){return(r||document).querySelector(s)}
+          function now(){return performance.now()/1000}
+
+          /* ---------- Estado (juego / captcha) que lee la app nativa ---------- */
+          var HS={};
+          function rep(src,g,c){HS[src]=[g,c,now()]}
+          function hs(i){var t=now(),r=0,k;for(k in HS)if(t-HS[k][2]<1.5&&HS[k][i])r=1;return r}
+          window.__hbs=function(){return hs(0)};
+          setInterval(function(){
+            try{
+              var g=qs('.game-view')?1:0,c=qs('iframe[src*="recaptcha"],iframe[title*="reCAPTCHA"],.g-recaptcha')?1:0;
+              if(isTop)rep('t',g,c);else window.top.postMessage({hbs:[g,c]},'*');
+            }catch(e){}
+          },400);
+
+          /* ---------- Limitador de FPS ---------- */
+          try{
+            var fps=+S.fps;
+            if(fps>0){
+              var raf=window.requestAnimationFrame.bind(window),mi=1000/fps,last=0;
+              window.requestAnimationFrame=function(cb){
+                return raf(function t(n){
+                  if(n-last<mi-1.2){raf(t);return}
+                  last=n-last>mi*2?n:last+mi;cb(n);
+                });
+              };
+            }
+          }catch(e){}
+
+          /* ---------- Resolucion + modo ahorro ---------- */
+          try{
+            var q=+S.quality||1;
+            if(S.eco&&q>.75)q=.75;
+            if(q!==1){
+              var d0=window.devicePixelRatio||1;
+              Object.defineProperty(window,'devicePixelRatio',{get:function(){return Math.max(.5,d0*q)},configurable:true});
+            }
+            if(S.eco)document.addEventListener('DOMContentLoaded',function(){
+              var s=document.createElement('style');
+              s.textContent='*{transition:none!important;animation:none!important;backdrop-filter:none!important;text-shadow:none!important}';
+              document.head.appendChild(s);
+            });
+          }catch(e){}
+
+          /* ---------- Inyeccion de teclas (funciona sin foco del WebView) ---------- */
+          var KM={37:['ArrowLeft','ArrowLeft'],38:['ArrowUp','ArrowUp'],39:['ArrowRight','ArrowRight'],40:['ArrowDown','ArrowDown'],88:['x','KeyX']};
+          var KH={n:0,k:{}};
+          function keyEv(kc,dn){
+            try{
+              if(kc>=37&&kc<=40){
+                if(dn&&!KH.k[kc]){KH.k[kc]=1;KH.n++}
+                else if(!dn&&KH.k[kc]){KH.k[kc]=0;KH.n--}
+              }
+              var k=KM[kc];if(!k)return;
+              (document.body||document).dispatchEvent(new KeyboardEvent(dn?'keydown':'keyup',{key:k[0],code:k[1],keyCode:kc,which:kc,bubbles:true,cancelable:true}));
+            }catch(e){}
+          }
+          var Q=[];
+          function say(t){Q.push(t)}
+          function doSay(t){
+            var i=qs('.chatbox-view [data-hook=input]')||qs('.chatbox-view input');
+            if(!i)return;
+            setv(i,t);
+            ['keydown','keypress','keyup'].forEach(function(n){
+              i.dispatchEvent(new KeyboardEvent(n,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));
+            });
+          }
+          setInterval(function(){var t=Q.shift();if(t)try{doSay(t)}catch(e){}},350);
+          function cmd(t){
+            if(t==='@chat:reset'&&window.__hbdock)window.__hbdock.reset();
+            else if(t&&t[0]!=='@')say(t);
+          }
+          window.addEventListener('message',function(e){
+            var d=e.data;
+            if(!d||typeof d!=='object')return;
+            if(d.hbk)keyEv(d.hbk[0],d.hbk[1]);
+            else if(d.hbc)cmd(d.hbc);
+            else if(d.hbs&&isTop)rep('f',d.hbs[0],d.hbs[1]);
+          });
+          function toFrame(msg,fallback){
+            var f=window.__hbf||qs('iframe.gameframe');
+            if(f&&f.contentWindow)f.contentWindow.postMessage(msg,'*');else fallback();
+          }
+          window.__hbk=function(k,d){toFrame({hbk:[k,d]},function(){keyEv(k,d)})};
+          window.__hbc=function(t){toFrame({hbc:t},function(){cmd(t)})};
+
+          /* ---------- Pagina superior: sin anuncios + vista estirada ---------- */
+          if(isTop){
+            var RT={'43':4/3,'54':5/4,'32':3/2,'1610':1.6},ratio=RT[S.stretch];
+            var isCap=function(s){
+              try{
+                if(s.tagName==='IFRAME')return /recaptcha|google\./.test(s.src||'');
+                return !!(s.querySelector&&s.querySelector('iframe[src*="recaptcha"]'));
+              }catch(e){return false}
+            };
+            var layout=function(){
+              try{
+                var f=qs('iframe.gameframe');
+                if(!f){
+                  var l=[].slice.call(document.querySelectorAll('iframe')).filter(function(x){return !isCap(x)});
+                  l.sort(function(a,b){return b.offsetWidth*b.offsetHeight-a.offsetWidth*a.offsetHeight});
+                  f=l[0];
+                }
+                if(!f)return;
+                window.__hbf=f;
+                if(S.noads!==false){
+                  var n=f;
+                  while(n&&n!==document.body&&n.parentNode){
+                    [].forEach.call(n.parentNode.children,function(s){
+                      if(s!==n&&s.tagName!=='STYLE'&&s.tagName!=='SCRIPT'&&s.tagName!=='LINK'&&!isCap(s))s.style.setProperty('display','none','important');
+                    });
+                    n=n.parentNode;
+                  }
+                }
+                var W=window.innerWidth,Hh=window.innerHeight,rt=hs(1)?0:ratio;
+                /* z-index bajo: el desafio de reCAPTCHA (z-index 2e9) queda por encima del juego */
+                var st='position:fixed!important;left:0;top:0;border:0;margin:0;z-index:1000;background:#1a2125;';
+                if(rt&&W>Hh*rt){
+                  var iw=Math.round(Hh*rt);
+                  st+='width:'+iw+'px!important;height:'+Hh+'px!important;transform-origin:0 0;transform:scaleX('+(W/iw)+');';
+                }else st+='width:100vw!important;height:100vh!important;';
+                if(f.__st!==st){
+                  f.__st=st;f.style.cssText=st;
+                  document.documentElement.style.cssText='overflow:hidden;background:#1a2125';
+                  document.body.style.cssText='margin:0;overflow:hidden;background:#1a2125';
+                }
+              }catch(e){}
+            };
+            document.addEventListener('DOMContentLoaded',layout);
+            window.addEventListener('resize',layout);
+            setInterval(layout,800);
+          }
+
+          /* ---------- Hooks de canvas: skins, auras, pelota, guias ---------- */
+          var P=window.CanvasRenderingContext2D&&CanvasRenderingContext2D.prototype;
+          var AS=H.assist||{};
+          var asOn=!!(AS.mode&&AS.mode!='off'&&(AS.where=='all'||mode=='train'||(AS.where=='mine'&&mode=='create')));
+          if(P&&window.HBX){
+            var G={arc:null,n:0,busy:0,sp:new WeakMap(),pt:new WeakMap(),tr:[],me:null,bl:null};
+            var av=H.avatar||'',J=H.jersey||{},A=H.aura||{},B=H.ball||{};
+            var jOn=!!J.on,pOn=!!(H.photoOn&&H.photo),aOn=!!(A.type&&A.type!='none');
+            var gBall=!!AS.gball,gRing=!!AS.gring,vOn=aOn||gRing;
+            var bOn=!!(B.skin&&B.skin!='classic'||B.photo||B.trail&&B.trail!='none');
+            var IP=new Image(),IB=new Image();
+            if(H.photo)IP.src=H.photo;
+            if(B.photo)IB.src=B.photo;
+            var ok=function(i){return i.complete&&i.naturalWidth>0};
+            var sc=function(m){return Math.hypot(m.a,m.b)};
+            var ap=function(m,x,y){return[m.a*x+m.c*y+m.e,m.b*x+m.d*y+m.f]};
+            var meAt=function(m,x,y,r){var p=ap(m,x,y);G.me={x:p[0],y:p[1],r:r*sc(m),t:now()}};
+
+            /* velocidad estimada de la pelota (px de pantalla / s) */
+            var V={x:0,y:0,t:0,vx:0,vy:0};
+            var vel=function(x,y,t){
+              if(V.t){
+                var dt=t-V.t;
+                if(dt>.004&&dt<.12){V.vx=V.vx*.6+(x-V.x)/dt*.4;V.vy=V.vy*.6+(y-V.y)/dt*.4}
+                else if(dt>=.12){V.vx=V.vy=0}
+              }
+              V.x=x;V.y=y;V.t=t;
+            };
+            var guide=function(c,x,y,r){
+              var sp=Math.hypot(V.vx,V.vy);
+              if(sp<40)return;
+              var L=Math.min(sp*.35,r*14),ux=V.vx/sp,uy=V.vy/sp,sx=x+ux*r*1.3,sy=y+uy*r*1.3,ex=sx+ux*L,ey=sy+uy*L,h=r*.9;
+              c.save();c.globalCompositeOperation='lighter';c.strokeStyle='rgba(110,255,190,.8)';c.fillStyle='rgba(110,255,190,.8)';
+              c.lineWidth=Math.max(1.5,r*.18);c.lineCap='round';c.setLineDash([r*.6,r*.5]);
+              c.beginPath();c.moveTo(sx,sy);c.lineTo(ex,ey);c.stroke();c.setLineDash([]);
+              c.beginPath();c.moveTo(ex+ux*h,ey+uy*h);c.lineTo(ex-uy*h*.6,ey+ux*h*.6);c.lineTo(ex+uy*h*.6,ey-ux*h*.6);c.closePath();c.fill();
+              c.restore();
+            };
+            /* aura + aro de patada alrededor de MI jugador */
+            var drawFx=function(c,m,x,y,r){
+              var p=ap(m,x,y),R=r*sc(m),t=now();G.busy++;
+              try{
+                c.save();c.setTransform(1,0,0,1,0,0);
+                if(aOn)HBX.aura(c,p[0],p[1],R,A,t);
+                if(gRing){
+                  var kr=R*(1+4/15),b=G.bl,hit=b&&t-b.t<.12&&Math.hypot(b.x-p[0],b.y-p[1])<kr+b.r;
+                  c.lineWidth=Math.max(1.5,R*.1);c.strokeStyle=hit?'rgba(110,255,150,.95)':'rgba(255,255,255,.35)';
+                  c.beginPath();c.arc(p[0],p[1],kr,0,6.2832);c.stroke();
+                }
+              }finally{c.restore();G.busy--}
+            };
+            var pre=function(n,f){
+              var o=P[n];
+              P[n]=function(){var r;try{if(!G.busy)r=f.call(this,arguments)}catch(e){G.busy=0}if(r===1)return;return o.apply(this,arguments)};
+            };
+            var post=function(n,f){
+              var o=P[n];
+              P[n]=function(){var r=o.apply(this,arguments);try{if(!G.busy)f.call(this,arguments)}catch(e){G.busy=0}return r};
+            };
+
+            pre('beginPath',function(){G.n=0;G.arc=null});
+            pre('arc',function(a){
+              var r=a[2];G.n++;
+              G.arc=(r>8.5&&r<17.5)?{x:a[0],y:a[1],r:r,m:this.getTransform()}:null;
+            });
+            var cp=P.createPattern;
+            P.createPattern=function(i){
+              var p=cp.apply(this,arguments);
+              try{if(G.sp.has(i))G.pt.set(p,i)}catch(e){}
+              return p;
+            };
+
+            /* mi jugador: se ejecuta cuando se dibuja el texto del avatar */
+            pre('fillText',function(a){
+              if(!av||a[0]!==av)return;
+              var g=G.arc&&G.arc.r>12.5?G.arc:null,c=this,m=g?g.m:c.getTransform(),x=g?g.x:a[1],y=g?g.y:a[2],r0=g?g.r:15,r=r0-1.2;
+              var photo=false;
+              if(jOn||pOn){
+                photo=pOn&&ok(IP);G.busy++;
+                try{
+                  c.save();if(g)c.setTransform(m);
+                  if(photo)HBX.cimg(c,IP,x,y,r);else if(jOn)HBX.jersey(c,x,y,r,J);
+                }finally{c.restore();G.busy--}
+              }
+              var cv=c.canvas;
+              if(cv&&cv.isConnected){meAt(m,x,y,r0);if(vOn)drawFx(c,m,x,y,r0)}
+              else if(cv){var p=ap(m,x,y);G.sp.set(cv,{cx:p[0],cy:p[1],r:r0*sc(m)})}
+              return photo?1:0;
+            });
+
+            /* mi jugador dibujado desde un sprite en cache */
+            post('drawImage',function(a){
+              var i=a[0],mt=G.sp.get(i);
+              if(!mt)return;
+              var sx=0,sy=0,sw=i.width,sh=i.height,dx,dy,dw,dh;
+              if(a.length>=9){sx=a[1];sy=a[2];sw=a[3];sh=a[4];dx=a[5];dy=a[6];dw=a[7];dh=a[8]}
+              else{dx=a[1];dy=a[2];dw=a.length>=5?a[3]:sw;dh=a.length>=5?a[4]:sh}
+              var m=this.getTransform(),ux=dx+(mt.cx-sx)*dw/sw,uy=dy+(mt.cy-sy)*dh/sh,ur=mt.r*dw/sw;
+              meAt(m,ux,uy,ur);
+              if(vOn)drawFx(this,m,ux,uy,ur);
+            });
+
+            /* pelota + jugador con patron */
+            post('fill',function(){
+              var a=G.arc;if(!a||G.n!==1)return;
+              var m=a.m,fs=this.fillStyle;
+              if(G.pt.has(fs)){meAt(m,a.x,a.y,a.r);if(vOn)drawFx(this,m,a.x,a.y,a.r);return}
+              if(a.r>8.5&&a.r<11.5){
+                var p=ap(m,a.x,a.y),r=a.r*sc(m),c=this,t=now();
+                G.bl={x:p[0],y:p[1],r:r,t:t};
+                if(gBall)vel(p[0],p[1],t);
+                if(!bOn&&!gBall)return;
+                G.busy++;
+                try{
+                  c.save();c.setTransform(1,0,0,1,0,0);
+                  if(bOn){HBX.trail(c,G.tr,p[0],p[1],r,B);HBX.ball(c,p[0],p[1],r,B,ok(IB)?IB:null)}
+                  if(gBall)guide(c,p[0],p[1],r);
+                }finally{c.restore();G.busy--}
+              }
+            });
+
+            /* auto-patada: patea sola al tocar la pelota */
+            if(asOn){
+              var lk=0;
+              setInterval(function(){
+                var m=G.me,b=G.bl,t=now();
+                if(!m||!b||t-m.t>.12||t-b.t>.12)return;
+                if(AS.mode=='move'&&!KH.n)return;
+                if(t-lk<(+AS.delay||180)/1000)return;
+                if(Math.hypot(m.x-b.x,m.y-b.y)<m.r+b.r+(+AS.range||0)*b.r){
+                  lk=t;keyEv(88,1);setTimeout(function(){keyEv(88,0)},50);
+                }
+              },16);
+            }
+          }
+
+          /* ---------- Helpers del flujo automatico ---------- */
+          function setv(e,v){
+            try{
+              var d=Object.getOwnPropertyDescriptor(e.tagName=='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype,'value');
+              d.set.call(e,v);
+            }catch(x){e.value=v}
+            e.dispatchEvent(new Event('input',{bubbles:true}));
+            e.dispatchEvent(new Event('change',{bubbles:true}));
+          }
+          function btn(r,re,hook){
+            var b=hook&&qs('[data-hook="'+hook+'"]',r);
+            if(b)return b;
+            var l=[].slice.call(r.querySelectorAll('button'));
+            for(var i=0;i<l.length;i++)if(re.test(l[i].textContent.trim()))return l[i];
+          }
+
+          /* ---------- Chat arrastrable (en partida) ---------- */
+          function dock(){
+            var el=qs('.game-view .chatbox-view');
+            if(!el||el.__hbd)return;
+            el.__hbd=1;
+            var CS=H.chat||{},sv={};
+            try{sv=JSON.parse(localStorage.getItem('hbchat')||'{}')}catch(e){}
+            var r=el.getBoundingClientRect(),sca=sv.s||(+CS.scale||1),al=+CS.alpha||.85;
+            var x=sv.x!=null?sv.x:r.left,y=sv.y!=null?sv.y:r.top,w=sv.w||Math.max(220,r.width||320),col=!!CS.collapsed;
+            function place(){
+              x=Math.max(0,Math.min(innerWidth-60,x));y=Math.max(0,Math.min(innerHeight-30,y));
+              [['position','fixed'],['left',x+'px'],['top',y+'px'],['right','auto'],['bottom','auto'],['width',w+'px'],
+               ['transform','scale('+sca+')'],['transform-origin','0 0'],['opacity',al],['z-index','60']]
+                .forEach(function(p){el.style.setProperty(p[0],String(p[1]),'important')});
+            }
+            function save(){try{localStorage.setItem('hbchat',JSON.stringify({x:x,y:y,w:w,s:sca}))}catch(e){}}
+            var h=document.createElement('div');
+            h.style.cssText='display:flex;align-items:center;gap:12px;padding:6px 10px;background:rgba(0,0,0,.6);color:#fff;font:600 14px sans-serif;touch-action:none;border-radius:8px 8px 0 0;-webkit-user-select:none;user-select:none';
+            h.innerHTML='<span style="flex:1">⠿ Chat</span><b data-a="min" style="padding:0 6px">▾</b><b data-a="sm" style="padding:0 6px">A−</b><b data-a="bg" style="padding:0 6px">A+</b>';
+            el.insertBefore(h,el.firstChild);
+            function collapse(){[].forEach.call(el.children,function(c){if(c!==h)c.style.display=col?'none':''})}
+            function act(a){
+              if(a=='min'){col=!col;collapse()}
+              else if(a=='sm')sca=Math.max(.5,sca-.1);
+              else sca=Math.min(1.6,sca+.1);
+              place();save();
+            }
+            var dr=null;
+            h.addEventListener('pointerdown',function(e){
+              var a=e.target.dataset&&e.target.dataset.a;
+              if(a){act(a);return}
+              dr={px:e.clientX,py:e.clientY,x:x,y:y};
+              try{h.setPointerCapture(e.pointerId)}catch(z){}
+              e.preventDefault();
+            });
+            h.addEventListener('pointermove',function(e){if(!dr)return;x=dr.x+e.clientX-dr.px;y=dr.y+e.clientY-dr.py;place()});
+            h.addEventListener('pointerup',function(){if(dr){dr=null;save()}});
+            window.__hbdock={reset:function(){x=10;y=Math.max(0,innerHeight-220);sca=1;place();save()}};
+            place();collapse();
+          }
+
+          /* ---------- Flujo automatico: nick, crear sala, avatar, extrapolation ---------- */
+          var st={nick:0,list:0,dlg:0,join:0};
+          setInterval(function(){
+            try{
+              dock();
+              var nv=qs('.choose-nickname-view');
+              if(nv){
+                st.join=0;
+                var i=qs('input',nv);
+                if(i&&!i.value&&H.nick)setv(i,H.nick);
+                if(!st.nick&&i&&i.value&&mode){st.nick=1;var b=btn(nv,/^(ok|aceptar)$/i,'ok');if(b)setTimeout(function(){b.click()},250)}
+                return;
+              }
+              st.nick=0;
+              var cr=qs('.create-room-view');
+              if(cr){
+                if(!st.dlg&&(mode=='create'||mode=='train')){
+                  st.dlg=1;
+                  var R=H.room||{},tr=mode=='train',e;
+                  var nm=tr?'Entrenamiento '+(H.nick||''):(R.name||('Sala de '+(H.nick||'HaxBall')));
+                  if(e=qs('[data-hook=name]',cr))setv(e,nm);
+                  if(e=qs('[data-hook=pass]',cr))setv(e,tr?'':(R.pass||''));
+                  if(e=qs('[data-hook=max-pl]',cr))setv(e,String(tr?4:(R.max||12)));
+                  if(e=qs('[data-hook=unlisted]',cr)){var un=!!(tr||R.unlisted);if(e.checked!==un)e.click()}
+                  var c=btn(cr,/^(create|crear)$/i,'create');
+                  if(c)setTimeout(function(){c.click()},400);
+                }
+                return;
+              }
+              st.dlg=0;
+              var rl=qs('.roomlist-view');
+              if(rl){
+                st.join=0;
+                if((mode=='create'||mode=='train')&&!st.list){st.list=1;var cb=btn(rl,/create|crear/i,'create');if(cb)cb.click()}
+                return;
+              }
+              if(qs('.room-view,.game-view')){
+                if(!st.join)st.join=Date.now();
+                else if(st.join>1&&Date.now()-st.join>1500){
+                  st.join=1;
+                  if(H.avatar)say('/avatar '+H.avatar);
+                  if(typeof H.ext==='number')say('/extrapolation '+Math.round(H.ext));
+                }
+              }
+            }catch(e){}
+          },500);
+
+          /* ---------- Arrastrar jugadores con el dedo en la sala ---------- */
+          var D=null,L=null,tm=0;
+          function fire(t,x,y,el){
+            var o={bubbles:true,cancelable:true,clientX:x,clientY:y,view:window,buttons:1};
+            try{el.dispatchEvent(D.dr?new DragEvent(t,Object.assign(o,{dataTransfer:D.dt})):new MouseEvent(t,o))}catch(e){}
+          }
+          document.addEventListener('touchstart',function(e){
+            var t=e.touches[0],el=e.target.closest&&e.target.closest('.room-view .player-list-item');
+            if(!el||e.touches.length>1)return;
+            L={x:t.clientX,y:t.clientY};
+            clearTimeout(tm);
+            tm=setTimeout(function(){
+              if(!L)return;
+              D={el:el,dr:!!el.draggable,dt:window.DataTransfer?new DataTransfer():null};
+              fire(D.dr?'dragstart':'mousedown',L.x,L.y,el);
+            },320);
+          },{passive:true});
+          document.addEventListener('touchmove',function(e){
+            var t=e.touches[0];
+            if(D){
+              e.preventDefault();
+              fire(D.dr?'dragover':'mousemove',t.clientX,t.clientY,document.elementFromPoint(t.clientX,t.clientY)||document.body);
+            }else if(L&&Math.hypot(t.clientX-L.x,t.clientY-L.y)>10){clearTimeout(tm);L=null}
+          },{passive:false});
+          document.addEventListener('touchend',function(e){
+            clearTimeout(tm);
+            if(D){
+              var t=e.changedTouches[0],u=document.elementFromPoint(t.clientX,t.clientY)||document.body;
+              if(D.dr){fire('drop',t.clientX,t.clientY,u);fire('dragend',t.clientX,t.clientY,D.el)}
+              else fire('mouseup',t.clientX,t.clientY,u);
+              D=null;e.preventDefault();
+            }
+            L=null;
+          },{passive:false});
+          document.addEventListener('contextmenu',function(e){if(L||D)e.preventDefault()});
+          })();
+          EOF
+          cat > app/src/main/assets/menu.html <<'EOF'
+          <!doctype html>
+          <html><head><meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+          <style>
+          *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+          input{-webkit-user-select:text;user-select:text}
+          :root{--ac:#4da3ff;--ac2:#7b5cff;--ok:#27c26b}
+          html,body{margin:0;height:100%;overflow:hidden;background:radial-gradient(ellipse at 25% 0%,#1a3a72,#070b16 62%);font-family:system-ui,sans-serif;color:#e8f1ff}
+          #rain{position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none}
+          #app{position:fixed;inset:0;display:grid;grid-template-columns:122px 1fr 196px;grid-template-rows:auto 1fr;gap:8px 10px;padding:8px 14px}
+          header{grid-column:1/4;display:flex;align-items:center;gap:10px}
+          .logo{font:900 italic 22px/1 system-ui;letter-spacing:2px;text-shadow:0 0 14px var(--ac)}
+          .logo b{color:var(--ac)}
+          .logo i{font:700 11px system-ui;letter-spacing:5px;color:#ffb347;margin-left:8px;font-style:normal}
+          .tag{font-size:11px;opacity:.55;flex:1}
+          nav{display:flex;flex-direction:column;gap:5px;overflow:auto}
+          nav b{padding:9px 8px;border-radius:12px;background:rgba(255,255,255,.06);font-size:13px;font-weight:600;border:1px solid transparent}
+          nav b.on{background:linear-gradient(135deg,rgba(77,163,255,.3),rgba(123,92,255,.25));border-color:var(--ac)}
+          main{overflow:auto;background:rgba(10,18,36,.7);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:12px}
+          #hero{width:100%;height:96px;display:block;border-radius:14px;margin-bottom:10px;border:1px solid rgba(255,255,255,.12)}
+          .row{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+          .row>label{width:86px;font-size:12px;opacity:.75;flex:none}
+          .chips{display:flex;flex-wrap:wrap;gap:6px;flex:1}
+          .chips b{padding:7px 11px;border-radius:999px;background:rgba(255,255,255,.08);font-size:12px;font-weight:600;border:1px solid transparent}
+          .chips b.on{background:var(--ac);color:#04101f}
+          input[type=text]{flex:1;min-width:100px;padding:9px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.3);color:#fff;font-size:14px}
+          input[type=range]{flex:1}
+          input[type=color]{width:44px;height:30px;border:0;padding:0;background:none}
+          input[type=checkbox]{width:22px;height:22px}
+          h4{margin:6px 0 8px;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--ac)}
+          .note{font-size:11px;opacity:.6;margin:4px 0;line-height:1.35}
+          button{font:inherit;color:#fff;border:0;cursor:pointer}
+          .sm{padding:8px 12px;border-radius:10px;background:rgba(255,255,255,.12);font-size:12px;font-weight:600}
+          .act{flex:1;min-width:104px;padding:13px 8px;border-radius:14px;background:linear-gradient(135deg,#1f6feb,var(--ac2));font-size:13px;font-weight:700}
+          .lk{flex:1;padding:9px 11px;border-radius:10px;background:rgba(39,194,107,.16);border:1px solid rgba(39,194,107,.5);font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+          aside{display:flex;flex-direction:column;align-items:center;gap:8px;min-height:0}
+          #pv{width:100%;max-width:196px;aspect-ratio:1;border-radius:16px;background:rgba(10,18,36,.7);border:1px solid rgba(255,255,255,.1)}
+          .big{width:100%;padding:14px;border-radius:14px;background:linear-gradient(135deg,var(--ok),#14a1a1);font:800 16px system-ui;box-shadow:0 0 18px rgba(39,194,107,.4)}
+          #msg{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:rgba(0,0,0,.85);padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:9}
+          </style></head><body>
+          <canvas id="rain"></canvas>
+          <div id="app">
+            <header><div class="logo">HAX<b>BALL</b><i>MOBILE</i></div><div class="tag">v3.0</div><button class="sm" onclick="B.quit()">Salir</button></header>
+            <nav id="tabs"></nav>
+            <main id="pane"></main>
+            <aside><canvas id="pv" width="220" height="220"></canvas><button class="big" id="go">▶ JUGAR</button></aside>
+          </div>
+          <div id="msg"></div>
+          <script src="common.js"></script>
+          <script>
+          var B=window.HBApp||{get:function(){return'{}'},save:function(){},play:function(){},join:function(){},started:function(){return false},quit:function(){},cmd:function(){}};
+          var DEF={nick:'',avatar:'HB',
+            jersey:{on:false,pat:'v',c:['#e53935','#ffffff','#111111'],num:''},photo:'',photoOn:false,
+            aura:{type:'ring',color:'#00e5ff',size:1,speed:1},
+            ball:{skin:'classic',color:'#ffd400',trail:'none',photo:''},
+            screen:{stretch:'off',quality:1,fps:60,noads:true,eco:false},
+            pad:{scale:1,alpha:1,left:false,vib:true},
+            room:{name:'',pass:'',max:12,unlisted:false},auto:{mode:'join'},
+            ext:0,ctrl:{mode:'js',dz:.25,snap:true,minKick:50,stadium:true},
+            assist:{mode:'off',where:'train',range:.4,delay:180,gball:false,gring:false},
+            chat:{alpha:.85,scale:1,collapsed:false,quick:['gg','pasa','dale','bien!','gracias','uf']},
+            link:'',linkn:'',links:[]};
+          function merge(a,b){for(var k in b){if(b[k]&&typeof b[k]=='object'&&!Array.isArray(b[k])&&a[k]&&typeof a[k]=='object'&&!Array.isArray(a[k]))merge(a[k],b[k]);else a[k]=b[k]}return a}
+          var C=DEF;try{C=merge(DEF,JSON.parse(B.get()||'{}'))}catch(e){}
+          if(!Array.isArray(C.links))C.links=[];
+          var dirty=false,cur=0,$=function(i){return document.getElementById(i)};
+          function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+          var mt=0;
+          function toast(t){var m=$('msg');m.textContent=t;m.style.opacity=1;clearTimeout(mt);mt=setTimeout(function(){m.style.opacity=0},2200)}
+
+          var OPT={
+           'jersey.pat':[['solid','Lisa'],['v','Rayas V'],['h','Rayas H'],['d','Diagonal'],['half','Mitades'],['check','Cuadros']],
+           'aura.type':[['none','Ninguna'],['ring','Neón'],['pulse','Pulso'],['rainbow','Arcoíris'],['fire','Fuego'],['bolt','Rayos'],['stars','Estrellas']],
+           'ball.skin':[['classic','Clásica'],['color','Color'],['soccer','Fútbol'],['basket','Básquet'],['tennis','Tenis'],['neon','Neón'],['fire','Fuego']],
+           'ball.trail':[['none','Sin estela'],['line','Color'],['fire','Fuego'],['rainbow','Arcoíris']],
+           'screen.stretch':[['off','Normal'],['43','4:3 estirado'],['54','5:4'],['32','3:2'],['1610','16:10']],
+           'screen.quality':[['.5','Baja'],['.75','Media'],['1','Nativa']],
+           'screen.fps':[['30','30'],['60','60'],['90','90'],['120','120'],['0','Sin límite']],
+           'ctrl.mode':[['js','Inyectar (recomendado)'],['native','Nativo']],
+           'assist.mode':[['off','Apagada'],['move','Patea al tocar la pelota moviéndote'],['contact','Patea siempre al tocar']],
+           'assist.where':[['train','Solo Entrenar'],['mine','Entrenar y mis salas'],['all','Todas las salas']],
+           'room.max':[['2','2'],['4','4'],['6','6'],['8','8'],['12','12'],['16','16'],['30','30']],
+           'ext':[['0','0'],['10','10'],['20','20'],['30','30'],['40','40'],['60','60']]
+          };
+          function row(l,h){return'<div class="row"><label>'+l+'</label>'+h+'</div>'}
+          function chips(k,l){return row(l,'<div class="chips" data-k="'+k+'">'+OPT[k].map(function(o){return'<b data-v="'+o[0]+'">'+o[1]+'</b>'}).join('')+'</div>')}
+          function rng(k,l,a,b,s){return row(l,'<input type="range" data-k="'+k+'" min="'+a+'" max="'+b+'" step="'+s+'">')}
+          function col(k,l){return row(l,'<input type="color" data-k="'+k+'">')}
+          function txt(k,l,ph,m){return row(l,'<input type="text" data-k="'+k+'" placeholder="'+ph+'" maxlength="'+m+'">')}
+          function chk(k,l){return row(l,'<input type="checkbox" data-k="'+k+'">')}
+          function sub(t){return'<h4>'+t+'</h4>'}
+          function okUrl(u){return /^https:\/\/([a-z0-9-]+\.)*haxball\.com(\/|$)/i.test(u)}
+          function linksHtml(){return C.links.map(function(l,i){return'<div class="row"><b class="lk" onclick="goLink('+i+')">▶ '+esc(l.n||l.u)+'</b><button class="sm" onclick="delLink('+i+')">✕</button></div>'}).join('')}
+
+          var TABS=[
+          ['🏟','Jugar',function(){return'<canvas id="hero"></canvas>'+txt('nick','Tu nombre','Nombre en HaxBall',20)+
+           '<div class="row"><button class="act" onclick="start(\'join\')">🌐 Entrar a salas</button><button class="act" onclick="start(\'create\')">🛠 Crear sala</button><button class="act" onclick="start(\'train\')">🎯 Entrenar</button></div>'+
+           sub('Entrar con enlace de sala')+txt('link','Enlace','https://www.haxball.com/play?c=...',200)+txt('linkn','Nombre','Mi sala favorita',24)+
+           '<div class="row"><button class="sm" onclick="goLink(-1)">▶ Entrar</button><button class="sm" onclick="addLink()">💾 Guardar</button></div>'+linksHtml()+
+           sub('Tu sala')+txt('room.name','Nombre','Mi sala',30)+txt('room.pass','Contraseña','(opcional)',20)+chips('room.max','Jugadores')+chk('room.unlisted','Sala oculta')+
+           '<p class="note">Entrenar crea una sala oculta para 4. Crear sala pide el captcha de Google: resolvelo normalmente, el juego queda debajo y el desafío arriba. Dentro de la sala, mantené apretado un jugador y arrastralo para cambiarlo de equipo.</p>'}],
+          ['👤','Personaje',function(){return txt('avatar','Avatar (2)','HB',2)+
+           sub('Camiseta propia')+chk('jersey.on','Usar camiseta')+chips('jersey.pat','Diseño')+
+           row('Colores',['0','1','2'].map(function(i){return'<input type="color" data-k="jersey.c.'+i+'">'}).join('')+'<span class="note">base · franjas · detalle</span>')+
+           txt('jersey.num','Número','10',2)+
+           sub('Foto en tu personaje')+chk('photoOn','Usar foto')+
+           '<div class="row"><button class="sm" onclick="pick(\'photo\')">📷 Elegir foto</button><button class="sm" onclick="set(\'photo\',\'\');render()">Quitar</button></div>'+
+           '<p class="note">Camiseta, foto y aura se ven en TU pantalla. Los demás ven tu avatar. Si otro usa el mismo avatar, en tu pantalla también se verá con tu skin.</p>'}],
+          ['✨','Aura',function(){return chips('aura.type','Tipo')+col('aura.color','Color')+rng('aura.size','Tamaño',.5,2,.1)+rng('aura.speed','Velocidad',.3,3,.1)+
+           '<p class="note">Fuego y Arcoíris usan sus propios colores.</p>'}],
+          ['⚽','Pelota',function(){return chips('ball.skin','Estilo')+col('ball.color','Color')+chips('ball.trail','Estela')+
+           '<div class="row"><label>Foto</label><button class="sm" onclick="pick(\'ball.photo\')">📷 Elegir foto</button><button class="sm" onclick="set(\'ball.photo\',\'\');render()">Quitar</button></div>'}],
+          ['📺','Pantalla',function(){return chips('screen.stretch','Estirado')+chips('screen.quality','Calidad')+chips('screen.fps','FPS')+chk('screen.noads','Sin anuncios')+chk('screen.eco','Modo ahorro')+
+           '<p class="note">El estirado 4:3 agranda todo a lo ancho sin cambiar la resolución del teléfono (se desactiva solo mientras sale el captcha). Calidad baja y 30–60 FPS = más rendimiento. Los cambios se aplican al recargar el juego.</p>'}],
+          ['🎮','Controles',function(){return rng('pad.scale','Tamaño',.6,1.6,.05)+rng('pad.alpha','Opacidad',.2,1,.05)+chk('pad.left','Zurdo')+chk('pad.vib','Vibración')+
+           sub('Precisión')+rng('ctrl.dz','Zona muerta',.05,.6,.05)+chk('ctrl.snap','8 direcciones')+rng('ctrl.minKick','Toque patada ms',0,150,10)+chips('ctrl.mode','Teclas')+
+           '<p class="note">Los controles solo capturan toques durante la partida: en la lista de salas y en el captcha tocás directo la pantalla. 🎮 los oculta, 💬 abre chat rápido, ☰ abre este menú.</p>'}],
+          ['📡','Red',function(){return chips('ext','Atajos')+rng('ext','Extrapolation',-200,200,5)+
+           '<div class="row"><label>Valor</label><b id="extv" style="font-size:16px">'+C.ext+' ms</b><button class="sm" onclick="B.cmd(\'/extrapolation \'+C.ext)">Aplicar ahora</button></div>'+
+           '<p class="note">Se aplica solo al entrar a una sala. Con ping alto probá valores positivos (20–60); si el juego se siente adelantado, bajalo.</p>'}],
+          ['🧲','Control',function(){return sub('Auto-patada')+chips('assist.mode','Modo')+chips('assist.where','Dónde')+rng('assist.range','Alcance',0,1.5,.1)+rng('assist.delay','Espera ms',80,400,10)+
+           sub('Ayudas visuales')+chk('assist.gball','Guía de pelota')+chk('assist.gring','Aro de patada')+
+           sub('Física de control (tu sala)')+chk('ctrl.stadium','Cancha Control')+
+           '<p class="note">Auto-patada: patea sola cuando tu jugador toca la pelota (ventaja injusta en salas ajenas; por defecto solo en tu sala de entrenamiento). Necesita tu avatar activo para detectarte.<br>Guía de pelota: línea hacia donde va. Aro de patada: se pone verde cuando la pelota está al alcance.<br>Cancha Control: en tu sala, al tocar «Elegir estadio → Cargar», la app carga sola un futsal con paredes que casi no rebotan (la pelota se desliza recta) y pelota más pegada al jugador. La física la decide el dueño de la sala: no se puede cambiar en salas ajenas.</p>'}],
+          ['💬','Chat',function(){return sub('Frases rápidas (💬 en partida)')+[0,1,2,3,4,5].map(function(i){return txt('chat.quick.'+i,'Frase '+(i+1),'',20)}).join('')+
+           rng('chat.alpha','Opacidad',.2,1,.05)+rng('chat.scale','Tamaño',.5,1.6,.1)+chk('chat.collapsed','Empezar plegado')+
+           '<div class="row"><button class="sm" onclick="B.cmd(\'@chat:reset\')">Reiniciar posición</button></div>'+
+           '<p class="note">En partida, el chat tiene una barra ⠿ arriba: arrastrala para moverlo, ▾ lo pliega, A− / A+ cambian el tamaño.</p>'}]
+          ];
+
+          function get(p){return p.split('.').reduce(function(o,k){return o[k]},C)}
+          var pt=0;
+          function persist(){clearTimeout(pt);pt=setTimeout(function(){B.save(JSON.stringify(C))},250)}
+          function set(p,v){
+            if(p=='ext'){var l=$('extv');if(l)l.textContent=v+' ms'}
+            var a=p.split('.'),l=a.pop(),o=a.reduce(function(o,k){return o[k]},C);
+            o[l]=v;dirty=true;persist();
+            if(p=='photo'||p=='ball.photo')loadImgs();
+          }
+          function cv(v){return v!==''&&!isNaN(v)?+v:v}
+          function mark(e,v){[].forEach.call(e.children,function(c){c.classList.toggle('on',cv(c.dataset.v)===v)})}
+          function bind(){
+            $('pane').querySelectorAll('[data-k]').forEach(function(e){
+              var k=e.dataset.k,v=get(k);
+              if(e.classList.contains('chips')){
+                mark(e,v);
+                e.onclick=function(ev){var t=ev.target;if(t.dataset.v==null)return;set(k,cv(t.dataset.v));mark(e,get(k));if(k=='ext')render()};
+              }else if(e.type=='checkbox'){e.checked=!!v;e.onchange=function(){set(k,e.checked)}}
+              else{e.value=v;e.oninput=function(){set(k,e.type=='range'?+e.value:e.value)}}
+            });
+          }
+          function render(i){
+            if(i!=null)cur=i;
+            $('tabs').innerHTML=TABS.map(function(t,j){return'<b class="'+(j==cur?'on':'')+'" onclick="render('+j+')">'+t[0]+' '+t[1]+'</b>'}).join('');
+            $('pane').innerHTML=TABS[cur][2]();
+            bind();
+          }
+          function pick(k){
+            var f=document.createElement('input');f.type='file';f.accept='image/*';
+            f.onchange=function(){
+              if(!f.files[0])return;
+              var fr=new FileReader();
+              fr.onload=function(){
+                var im=new Image();
+                im.onload=function(){
+                  var c=document.createElement('canvas');c.width=c.height=128;
+                  var s=Math.min(im.width,im.height);
+                  c.getContext('2d').drawImage(im,(im.width-s)/2,(im.height-s)/2,s,s,0,0,128,128);
+                  set(k,c.toDataURL('image/jpeg',.85));
+                  if(k=='photo')set('photoOn',true);
+                  render();
+                };
+                im.src=fr.result;
+              };
+              fr.readAsDataURL(f.files[0]);
+            };
+            f.click();
+          }
+          function start(mode){C.auto={mode:mode};B.play(JSON.stringify(C),true);dirty=false}
+          function joinUrl(u){C.auto={mode:'join'};B.join(JSON.stringify(C),u);dirty=false}
+          function goLink(i){
+            var u=i<0?(C.link||'').trim():C.links[i].u;
+            if(!okUrl(u)){toast('Pegá un enlace de haxball.com');return}
+            joinUrl(u);
+          }
+          function addLink(){
+            var u=(C.link||'').trim(),n=(C.linkn||'').trim();
+            if(!okUrl(u)){toast('Pegá un enlace de haxball.com');return}
+            if(C.links.length>=8)C.links.shift();
+            C.links.push({n:n||u.replace(/^https:\/\/(www\.)?/,''),u:u});
+            C.link='';C.linkn='';B.save(JSON.stringify(C));render();toast('Sala guardada');
+          }
+          function delLink(i){C.links.splice(i,1);B.save(JSON.stringify(C));render()}
+          $('go').onclick=function(){
+            if(B.started()&&!dirty){B.play(JSON.stringify(C),false)}
+            else{C.auto={mode:'join'};B.play(JSON.stringify(C),true);dirty=false}
+          };
+          window.onShow=function(){$('go').textContent=(B.started()&&!dirty)?'▶ VOLVER AL JUEGO':(B.started()?'↻ APLICAR Y JUGAR':'▶ JUGAR')};
+
+          /* ---------- portada: pelota épica + HAXBALL MOBILE ---------- */
+          function hero(t){
+            var cv=$('hero');if(!cv)return;
+            var dp=Math.min(2,devicePixelRatio||1),w=cv.clientWidth,h=cv.clientHeight;
+            if(!w)return;
+            if(cv.width!==Math.round(w*dp)){cv.width=Math.round(w*dp);cv.height=Math.round(h*dp)}
+            var c=cv.getContext('2d'),s=t/1000,i,a,g,px,py;
+            c.setTransform(dp,0,0,dp,0,0);
+            g=c.createLinearGradient(0,0,w,h);g.addColorStop(0,'#0a1c48');g.addColorStop(.5,'#2b0f63');g.addColorStop(1,'#05070f');
+            c.fillStyle=g;c.fillRect(0,0,w,h);
+            var R=h*.3,bx=w-h*.78,by=h*.54;
+            c.save();c.globalCompositeOperation='lighter';
+            for(i=0;i<12;i++){a=i*Math.PI/6+s*.3;c.fillStyle='rgba(110,170,255,'+(.05+.04*Math.sin(s*2+i))+')';c.beginPath();c.moveTo(bx,by);c.arc(bx,by,w,a,a+.13);c.closePath();c.fill()}
+            g=c.createRadialGradient(bx,by,R*.3,bx,by,R*2.8);g.addColorStop(0,'rgba(255,160,40,.8)');g.addColorStop(.45,'rgba(255,70,20,.25)');g.addColorStop(1,'rgba(255,60,0,0)');
+            c.fillStyle=g;c.fillRect(0,0,w,h);
+            for(i=0;i<3;i++){a=(s*.6+i/3)%1;c.globalAlpha=(1-a)*.7;c.strokeStyle='#7fd4ff';c.lineWidth=2;c.beginPath();c.arc(bx,by,R*(1+a*1.8),0,6.2832);c.stroke()}
+            c.restore();
+            HBX.aura(c,bx,by,R,{type:'fire',color:'#ff8a00',size:1.5,speed:1.2},s);
+            HBX.ball(c,bx,by,R,{skin:'fire',color:'#ffd400'},null);
+            c.save();c.beginPath();c.arc(bx,by,R,0,6.2832);c.clip();c.fillStyle='rgba(30,8,0,.78)';
+            for(i=0;i<5;i++){
+              a=i*1.2566+s*.9;px=bx+Math.cos(a)*R*.62;py=by+Math.sin(a)*R*.62;
+              c.beginPath();for(var j=0;j<5;j++){var b2=j*1.2566+a;c.lineTo(px+Math.cos(b2)*R*.27,py+Math.sin(b2)*R*.27)}c.closePath();c.fill();
+            }
+            c.restore();
+            g=c.createRadialGradient(bx-R*.4,by-R*.45,0,bx-R*.4,by-R*.45,R*.6);g.addColorStop(0,'rgba(255,255,255,.55)');g.addColorStop(1,'rgba(255,255,255,0)');
+            c.fillStyle=g;c.beginPath();c.arc(bx,by,R,0,6.2832);c.fill();
+            HBX.aura(c,bx,by,R,{type:'bolt',color:'#8fe3ff',size:1.8,speed:1},s);
+            var tx=Math.max(12,w*.04),fs=Math.round(Math.min(h*.4,w*.11));
+            c.textAlign='left';c.textBaseline='alphabetic';
+            c.font='900 italic '+fs+'px system-ui,sans-serif';
+            g=c.createLinearGradient(0,h*.2,0,h*.62);g.addColorStop(0,'#ffffff');g.addColorStop(1,'#7fc0ff');
+            c.shadowColor='#4da3ff';c.shadowBlur=18;c.fillStyle=g;c.fillText('HAXBALL',tx,h*.58);
+            c.shadowBlur=0;c.font='800 '+Math.round(fs*.4)+'px system-ui,sans-serif';c.fillStyle='#ffb347';
+            c.fillText('M  O  B  I  L  E',tx+4,h*.58+fs*.52);
+          }
+
+          /* ---------- vista previa ---------- */
+          var pc=$('pv').getContext('2d'),IP=new Image(),IB=new Image(),tr=[];
+          function loadImgs(){IP.src=C.photo||'';IB.src=C.ball.photo||''}
+          function ok(i){return i.complete&&i.naturalWidth>0}
+          function pv(t){
+            var c=pc,s=t/1000,px=72,py=112,r=34,photo=C.photoOn&&ok(IP);
+            c.clearRect(0,0,220,220);
+            if(photo)HBX.cimg(c,IP,px,py,r);
+            else if(C.jersey.on)HBX.jersey(c,px,py,r,C.jersey);
+            else{c.fillStyle='#e56e56';c.beginPath();c.arc(px,py,r,0,6.2832);c.fill();c.lineWidth=3;c.strokeStyle='#000';c.stroke()}
+            if(!photo){c.fillStyle='#fff';c.font='bold 20px sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText(C.avatar,px,py)}
+            HBX.aura(c,px,py,r,C.aura,s);
+            var bx=150+Math.cos(s*1.6)*20,by=150+Math.sin(s*1.1)*40,br=20;
+            c.fillStyle='#fff';c.beginPath();c.arc(bx,by,br,0,6.2832);c.fill();c.lineWidth=2.5;c.strokeStyle='#000';c.stroke();
+            HBX.trail(c,tr,bx,by,br,C.ball);
+            HBX.ball(c,bx,by,br,C.ball,ok(IB)?IB:null);
+          }
+
+          /* ---------- lluvia + bucle (30 fps; se detiene al jugar) ---------- */
+          var FX=1,run=0,rc=$('rain'),rx=rc.getContext('2d'),W,Hh,dr=[],rp=[],fl=0,lt=0;
+          function rs(){W=rc.width=innerWidth;Hh=rc.height=innerHeight}
+          rs();addEventListener('resize',rs);
+          function nd(init){return{x:Math.random()*(W+200)-100,y:init?Math.random()*Hh:-30,l:12+Math.random()*20,v:11+Math.random()*10,a:.15+Math.random()*.4}}
+          for(var q=0;q<80;q++)dr.push(nd(1));
+          function loop(t){
+            if(!FX){run=0;return}
+            requestAnimationFrame(loop);
+            if(t-lt<28)return;
+            lt=t;
+            rx.clearRect(0,0,W,Hh);
+            if(fl>0){rx.fillStyle='rgba(190,215,255,'+fl*.2+')';rx.fillRect(0,0,W,Hh);fl-=.06}
+            else if(Math.random()<.003)fl=1;
+            rx.lineWidth=1.2;rx.lineCap='round';
+            for(var i=0;i<dr.length;i++){
+              var d=dr[i];
+              rx.strokeStyle='rgba(160,200,255,'+d.a+')';rx.beginPath();rx.moveTo(d.x,d.y);rx.lineTo(d.x-d.l*.25,d.y+d.l);rx.stroke();
+              d.y+=d.v*1.5;d.x-=d.v*.37;
+              if(d.y>Hh){if(Math.random()<.4)rp.push({x:d.x,y:Hh-Math.random()*40,r:1,a:.5});dr[i]=nd(0)}
+            }
+            for(i=rp.length-1;i>=0;i--){
+              var p=rp[i];
+              rx.strokeStyle='rgba(160,200,255,'+p.a+')';rx.beginPath();rx.ellipse(p.x,p.y,p.r,p.r*.35,0,0,6.28);rx.stroke();
+              p.r+=1.2;p.a-=.03;if(p.a<=0)rp.splice(i,1);
+            }
+            pv(t||0);
+            if(cur==0)hero(t||0);
+          }
+          window.fx=function(on){FX=on;if(on&&!run){run=1;requestAnimationFrame(loop)}if(on)onShow()};
+          loadImgs();render(0);onShow();fx(1);
+          </script></body></html>
+          EOF
+          cat > app/src/main/assets/control.hbs <<'EOF'
+          {
+          "name":"Futsal Control - HaxBall Mobile",
+          "width":420,
+          "height":200,
+          "spawnDistance":170,
+          "bg":{"type":"hockey","width":368,"height":171,"kickOffRadius":55,"cornerRadius":0},
+          "playerPhysics":{"bCoef":0.35,"invMass":0.5,"damping":0.96,"acceleration":0.1,"kickingAcceleration":0.07,"kickingDamping":0.96,"kickStrength":5},
+          "ballPhysics":{"radius":10,"bCoef":0.5,"invMass":1,"damping":0.992,"color":"FFFFFF"},
+          "vertexes":[
+          {"x":-368,"y":-171},{"x":368,"y":-171},{"x":368,"y":-64},{"x":368,"y":64},
+          {"x":368,"y":171},{"x":-368,"y":171},{"x":-368,"y":64},{"x":-368,"y":-64},
+          {"x":-398,"y":-64},{"x":-398,"y":64},{"x":398,"y":-64},{"x":398,"y":64},
+          {"x":0,"y":-171},{"x":0,"y":-55},{"x":0,"y":55},{"x":0,"y":171}
+          ],
+          "segments":[
+          {"v0":0,"v1":1,"vis":false,"bCoef":0.35,"cMask":["ball"]},
+          {"v0":1,"v1":2,"vis":false,"bCoef":0.35,"cMask":["ball"]},
+          {"v0":3,"v1":4,"vis":false,"bCoef":0.35,"cMask":["ball"]},
+          {"v0":4,"v1":5,"vis":false,"bCoef":0.35,"cMask":["ball"]},
+          {"v0":5,"v1":6,"vis":false,"bCoef":0.35,"cMask":["ball"]},
+          {"v0":7,"v1":0,"vis":false,"bCoef":0.35,"cMask":["ball"]},
+          {"v0":7,"v1":8,"vis":true,"color":"FFFFFF","bCoef":0.2,"cMask":["ball"]},
+          {"v0":8,"v1":9,"vis":true,"color":"FFFFFF","bCoef":0.2,"cMask":["ball"]},
+          {"v0":9,"v1":6,"vis":true,"color":"FFFFFF","bCoef":0.2,"cMask":["ball"]},
+          {"v0":2,"v1":10,"vis":true,"color":"FFFFFF","bCoef":0.2,"cMask":["ball"]},
+          {"v0":10,"v1":11,"vis":true,"color":"FFFFFF","bCoef":0.2,"cMask":["ball"]},
+          {"v0":11,"v1":3,"vis":true,"color":"FFFFFF","bCoef":0.2,"cMask":["ball"]},
+          {"v0":12,"v1":13,"vis":false,"bCoef":0.1,"cMask":["red","blue"],"cGroup":["redKO","blueKO"]},
+          {"v0":14,"v1":15,"vis":false,"bCoef":0.1,"cMask":["red","blue"],"cGroup":["redKO","blueKO"]},
+          {"v0":13,"v1":14,"curve":180,"vis":false,"bCoef":0.1,"cMask":["red","blue"],"cGroup":["blueKO"]},
+          {"v0":14,"v1":13,"curve":180,"vis":false,"bCoef":0.1,"cMask":["red","blue"],"cGroup":["redKO"]}
+          ],
+          "goals":[
+          {"p0":[-368,-64],"p1":[-368,64],"team":"red"},
+          {"p0":[368,-64],"p1":[368,64],"team":"blue"}
+          ],
+          "discs":[
+          {"pos":[-368,-64],"radius":5,"invMass":0,"bCoef":0.5,"color":"FFCC00"},
+          {"pos":[-368,64],"radius":5,"invMass":0,"bCoef":0.5,"color":"FFCC00"},
+          {"pos":[368,-64],"radius":5,"invMass":0,"bCoef":0.5,"color":"FFCC00"},
+          {"pos":[368,64],"radius":5,"invMass":0,"bCoef":0.5,"color":"FFCC00"}
+          ],
+          "planes":[
+          {"normal":[0,1],"dist":-171,"bCoef":0.35,"cMask":["ball"]},
+          {"normal":[0,-1],"dist":-171,"bCoef":0.35,"cMask":["ball"]},
+          {"normal":[1,0],"dist":-400,"bCoef":0.2,"cMask":["ball"]},
+          {"normal":[-1,0],"dist":-400,"bCoef":0.2,"cMask":["ball"]},
+          {"normal":[0,1],"dist":-200,"bCoef":0.1,"cMask":["red","blue"]},
+          {"normal":[0,-1],"dist":-200,"bCoef":0.1,"cMask":["red","blue"]},
+          {"normal":[1,0],"dist":-420,"bCoef":0.1,"cMask":["red","blue"]},
+          {"normal":[-1,0],"dist":-420,"bCoef":0.1,"cMask":["red","blue"]}
+          ]
+          }
+          EOF
+          gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with: {name: haxball-mobile-apk, path: app/build/outputs/apk/debug/app-debug.apk}
